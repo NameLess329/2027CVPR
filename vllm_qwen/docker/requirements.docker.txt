@@ -1,0 +1,6 @@
+transformers>=4.57.0
+modelscope>=1.24.0
+qwen-vl-utils>=0.0.11
+pillow>=10.4.0
+tqdm>=4.66.0
+sentencepiece>=0.2.0

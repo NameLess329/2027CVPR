@@ -1,0 +1,35 @@
+# PyTorch CUDA wheels for NVIDIA A6000 (Ampere), L20 (Ada), and H20 (Hopper).
+--extra-index-url https://download.pytorch.org/whl/cu124
+
+torch==2.6.0+cu124
+torchvision==0.21.0+cu124
+torchaudio==2.6.0+cu124
+
+accelerate>=1.2.0
+transformers>=4.57.1
+peft>=0.14.0
+modelscope>=1.20.0
+huggingface_hub>=0.27.0
+safetensors>=0.4.5
+
+pillow>=10.4.0
+numpy>=1.26.4
+pandas>=2.2.0
+einops>=0.8.0
+tqdm>=4.66.0
+packaging>=24.0
+typing_extensions>=4.12.0
+imageio[ffmpeg]>=2.36.0
+
+# Tokenizer / Qwen-VL processor helpers used by Transformers model components.
+tokenizers>=0.21.0
+sentencepiece>=0.2.0
+protobuf>=5.28.0
+qwen-vl-utils>=0.0.8
+
+# Optional code paths exposed by scripts/train.py flags and DiffSynth modules.
+tensorboard>=2.18.0
+wandb>=0.18.0
+swanlab>=0.5.0
+lpips>=0.1.4
+librosa>=0.10.2.post1

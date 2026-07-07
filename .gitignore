@@ -1,0 +1,18 @@
+# Python and uv virtual environments
+.venv/
+venv/
+env/
+code/
+data/
+
+# Python caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Editor and OS noise
+.DS_Store
+Thumbs.db
