@@ -1,0 +1,13 @@
+# syntax=docker/dockerfile:1
+
+# Incremental image based on the previously built RevealLayer environment.
+# It only fixes the flash-attn/xformers compatibility issue.
+FROM localhost/reveallayer:cuda128
+
+ENV PIP_NO_CACHE_DIR=1
+
+RUN python -m pip uninstall -y flash-attn \
+    && python -m pip install flash-attn==2.7.4.post1 --no-build-isolation \
+    && python -c "import flash_attn; print('flash-attn', flash_attn.__version__)"
+
+CMD ["/bin/bash"]
