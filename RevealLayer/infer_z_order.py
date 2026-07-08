@@ -20,9 +20,12 @@ from safetensors.torch import load_file
 
 PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
 if PROJECT_ROOT not in sys.path:
-    sys.path.append(PROJECT_ROOT)
+    sys.path.insert(0, PROJECT_ROOT)
+LOCAL_DIFFUSERS_SRC = os.path.join(PROJECT_ROOT, "diffusers", "src")
+if os.path.isdir(LOCAL_DIFFUSERS_SRC) and LOCAL_DIFFUSERS_SRC not in sys.path:
+    sys.path.insert(0, LOCAL_DIFFUSERS_SRC)
 
-from diffusers import FluxTransformer2DModel, AutoencoderKL
+from diffusers import FluxPipeline
 from diffusers.utils import check_min_version
 from diffusers.configuration_utils import FrozenDict
 from diffusers.loaders.peft import _SET_ADAPTER_SCALE_FN_MAPPING
@@ -30,6 +33,7 @@ from diffusers.loaders.peft import _SET_ADAPTER_SCALE_FN_MAPPING
 from models.custom_model_xvae import AutoencoderKLTransformerTraining as CustomVAE
 from models.custom_pipeline import CustomFluxPipelineCfg
 from models.custom_model_mmdit import CustomFluxTransformer2DModel
+from training.lora import LEGACY_LORA_NAME, add_lora_to_transformer, load_lora_state
 
 check_min_version("0.31.0.dev0")
 
@@ -82,6 +86,13 @@ def resolve_data_path(path, data_root):
     return _join_path(data_root, path)
 
 
+def extract_boxes(entry):
+    boxes = entry.get("layout") or entry.get("bboxes") or entry.get("boxes") or entry.get("foreground_boxes")
+    if boxes:
+        return boxes
+    return [item.get("bbox") for item in entry.get("detections", []) if item.get("bbox") is not None]
+
+
 def _load_layer_pe(transformer, ckpt_dir: str):
     print("Loading 'layer_pe' weights...")
 
@@ -120,16 +131,24 @@ def _load_refiner(transformer, ckpt_dir: str):
         print(f"[ERROR] Failed to load 'Refiner': {e}")
 
 
-def _prepare_custom_transformer(config, args):
-    print("STEP 1: Initializing base Transformer model...")
-    transformer_orig = FluxTransformer2DModel.from_pretrained(
-        config.transformer_varient if hasattr(config, "transformer_varient") else config.pretrained_model_name_or_path,
-        subfolder="" if hasattr(config, "transformer_varient") else "transformer",
+def _load_base_flux_pipeline(config, args):
+    model_path = (
+        config.transformer_varient
+        if hasattr(config, "transformer_varient")
+        else args.pretrained_model_name_or_path
+    )
+    return FluxPipeline.from_pretrained(
+        model_path,
         revision=config.revision,
         variant=config.variant,
         torch_dtype=torch.bfloat16,
         cache_dir=config.get("cache_dir", None),
     )
+
+
+def _prepare_custom_transformer(config, args, base_pipeline):
+    print("STEP 1: Reading base Transformer model from FluxPipeline...")
+    transformer_orig = base_pipeline.transformer
 
     print("STEP 2: Preparing custom Transformer model...")
     mmdit_config = dict(transformer_orig.config)
@@ -143,20 +162,12 @@ def _prepare_custom_transformer(config, args):
     _load_layer_pe(transformer, args.ckpt_dir)
     _load_refiner(transformer, args.ckpt_dir)
 
-    del transformer_orig
     return transformer
 
 
-def _load_vae_encoder(args):
-    print("STEP 3: Loading VAE for full image encoding...")
-    vae_encoder = AutoencoderKL.from_pretrained(
-        args.pretrained_model_name_or_path,
-        subfolder="vae",
-        revision=None,
-        variant=None,
-        torch_dtype=torch.bfloat16,
-    )
-    return vae_encoder
+def _load_vae_encoder(base_pipeline):
+    print("STEP 3: Reusing VAE from base FluxPipeline...")
+    return base_pipeline.vae
 
 
 def _load_loras(pipeline, args):
@@ -167,15 +178,35 @@ def _load_loras(pipeline, args):
         print(f"[ERROR] Main LoRA file not found at {lora_path}. Skipping.")
         return pipeline
 
+    raw_state_dict = load_file(lora_path)
+    lora_keys = list(raw_state_dict.keys())
+    print("LoRA keys, first 5:", lora_keys[:5])
+    is_legacy_peft_format = any(".lora_A.default." in key or ".lora_B.default." in key for key in lora_keys)
+    if not is_legacy_peft_format:
+        try:
+            pipeline.load_lora_weights(raw_state_dict, adapter_name="layer")
+            print("Primary LoRA loaded successfully with diffusers loader.")
+            return pipeline
+        except Exception as e:
+            print(f"[WARNING] Diffusers LoRA loading failed, trying legacy PEFT fallback: {e}")
+
     try:
-        dit_state_dict = load_file(lora_path)
-        corrected_state_dict = {
-            k.replace("transformer.module.", "transformer."): v
-            for k, v in dit_state_dict.items()
-        }
-        print("Corrected LoRA keys, first 5:", list(corrected_state_dict.keys())[:5])
-        pipeline.load_lora_weights(corrected_state_dict, adapter_name="layer")
-        print("Primary LoRA 'layer' loaded successfully.")
+        legacy_path = os.path.join(args.ckpt_dir, LEGACY_LORA_NAME)
+        if os.path.exists(legacy_path):
+            lora_path = legacy_path
+            print(f"Using legacy PEFT LoRA file: {legacy_path}")
+        pipeline.transformer, targets = add_lora_to_transformer(
+            pipeline.transformer,
+            rank=args.lora_rank,
+            alpha=args.lora_alpha,
+            dropout=0.0,
+            target_modules=None,
+            upcast_trainable_dtype=None,
+        )
+        load_lora_state(pipeline.transformer, lora_path)
+        pipeline.transformer.requires_grad_(False)
+        pipeline.transformer.eval()
+        print(f"Primary LoRA loaded successfully with PEFT targets: {targets}")
     except Exception as e:
         print(f"[ERROR] Failed to load primary LoRA: {e}")
         return pipeline
@@ -195,8 +226,9 @@ def _load_loras(pipeline, args):
 def initialize_pipeline(config, args):
     print("--- Starting Pipeline Initialization ---")
 
-    transformer = _prepare_custom_transformer(config, args)
-    vae_encoder = _load_vae_encoder(args)
+    base_pipeline = _load_base_flux_pipeline(config, args)
+    transformer = _prepare_custom_transformer(config, args, base_pipeline)
+    vae_encoder = _load_vae_encoder(base_pipeline)
 
     print("STEP 4: Building pipeline and moving to GPU...")
     pipeline_type = CustomFluxPipelineCfg
@@ -211,6 +243,7 @@ def initialize_pipeline(config, args):
     ).to(torch.device("cuda", index=args.gpu_id))
 
     _load_loras(pipeline, args)
+    del base_pipeline
 
     print("--- Pipeline Initialized Successfully ---")
     return pipeline
@@ -324,11 +357,20 @@ def filter_and_align_bboxes(
     return valid_obj_bbox
 
 
+def apply_layer_order(boxes, layer_order):
+    boxes = list(boxes)
+    if layer_order == "reverse":
+        boxes.reverse()
+    elif layer_order != "as_is":
+        raise ValueError("layer_order must be 'as_is' or 'reverse'")
+    return boxes
+
+
 def test_one_sample(args, test_sample, pipeline, transp_vae, device, shuffle=False):
     generator = torch.Generator(device=device).manual_seed(args.seed)
     this_index = test_sample["index"]
 
-    validation_boxes_raw = test_sample["layout"]
+    validation_boxes_raw = apply_layer_order(test_sample["layout"], args.layer_order)
 
     print(f"Shuffle layer order: {shuffle}")
     if shuffle:
@@ -517,6 +559,18 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=43, help="Random seed for reproducibility.")
     parser.add_argument("--gpu_id", type=int, default=0, help="GPU ID to use.")
     parser.add_argument("--max_layer", type=int, default=12)
+    parser.add_argument("--lora_rank", type=int, default=64, help="LoRA rank used during training.")
+    parser.add_argument("--lora_alpha", type=int, default=64, help="LoRA alpha used during training.")
+    parser.add_argument(
+        "--layer_order",
+        type=str,
+        default="as_is",
+        choices=("as_is", "reverse"),
+        help=(
+            "Order of detections before generation. Use 'as_is' when detections[0] should become layer_0; "
+            "use 'reverse' when the dataset stores the opposite layer order."
+        ),
+    )
 
     parser.add_argument(
         "--max_samples",
@@ -555,7 +609,7 @@ def main():
         seed_everything(args.seed)
 
     try:
-        with open(args.input_json, "r") as f:
+        with open(args.input_json, "r", encoding="utf-8-sig") as f:
             all_data_entries = json.load(f)
         print(f"Loaded {len(all_data_entries)} samples from {args.input_json}")
     except FileNotFoundError:
@@ -605,7 +659,7 @@ def main():
                 continue
             full_image_path = resolve_data_path(full_image_path, args.data_root)
 
-            layout_from_detections = [d["bbox"] for d in entry.get("detections", [])]
+            layout_from_detections = extract_boxes(entry)
 
             sample = {
                 "index": entry.get("imgid", "0000xxx"),

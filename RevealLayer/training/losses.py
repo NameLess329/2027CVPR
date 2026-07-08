@@ -1,56 +1,106 @@
-from typing import Dict, Optional
+from __future__ import annotations
 
 import torch
 import torch.nn.functional as F
 
 
-def flow_matching_loss(pred_velocity: torch.Tensor, target_velocity: torch.Tensor) -> torch.Tensor:
-    return F.mse_loss(pred_velocity.float(), target_velocity.float())
+def flow_matching_loss(
+    prediction: torch.Tensor,
+    target: torch.Tensor,
+    token_mask: torch.Tensor,
+    training_weight: torch.Tensor | float | None = None,
+) -> torch.Tensor:
+    """Masked FM loss for RevealLayer tokens.
+
+    `token_mask` is expected to be broadcastable to `[batch, tokens, channels]`.
+    Layer 0, the full-image condition layer, must already be zeroed by the
+    caller.
+    """
+
+    while token_mask.ndim < prediction.ndim:
+        token_mask = token_mask.unsqueeze(-1)
+    sq = (prediction.float() - target.float()).pow(2) * token_mask.float()
+    denom = token_mask.float().sum().clamp_min(1.0) * prediction.shape[-1]
+    loss = sq.sum() / denom
+    if training_weight is not None:
+        loss = loss * torch.as_tensor(training_weight, dtype=loss.dtype, device=loss.device)
+    return loss
 
 
 def hard_constraint_alpha_loss(
     pred_alpha: torch.Tensor,
     target_alpha: torch.Tensor,
-    gamma: float = 1.5,
+    validation_boxes: list[list[int] | None],
     tau: float = 0.95,
+    gamma: float = 1.5,
     eps: float = 1e-6,
 ) -> torch.Tensor:
-    if pred_alpha.shape != target_alpha.shape:
-        target_alpha = F.interpolate(target_alpha.float(), size=pred_alpha.shape[-2:], mode="bilinear", align_corners=False)
-    delta = tau * (pred_alpha.float() - target_alpha.float()).abs()
-    delta = delta.clamp(min=0.0, max=1.0 - eps)
-    return -((delta ** gamma) * torch.log1p(-delta + eps)).mean()
+    """RevealLayer focal-style alpha loss over foreground layers.
+
+    `pred_alpha` is `[num_layers, 1, H, W]` from the transparent decoder.
+    `target_alpha` is `[num_layers - 1, 1, H, W]` for background + foregrounds.
+    """
+
+    losses = []
+    for layer_idx, box in enumerate(validation_boxes):
+        if layer_idx < 2 or box is None:
+            continue
+        target_idx = layer_idx - 1
+        if target_idx >= target_alpha.shape[0]:
+            continue
+        x1, y1, x2, y2 = [int(v) for v in box]
+        pred = ((pred_alpha[layer_idx:layer_idx + 1] + 1.0) / 2.0).clamp(0.0, 1.0)
+        target = target_alpha[target_idx:target_idx + 1].float().clamp(0.0, 1.0)
+        delta = tau * (pred[..., y1:y2, x1:x2] - target[..., y1:y2, x1:x2]).abs()
+        delta = delta.clamp(0.0, 1.0 - eps)
+        losses.append(-((delta ** gamma) * torch.log(1.0 - delta + eps)).mean())
+    if not losses:
+        return pred_alpha.sum() * 0.0
+    return torch.stack(losses).mean()
 
 
-def soft_orthogonality_loss(background_rgb: torch.Tensor, foreground_rgb: torch.Tensor, foreground_alpha: Optional[torch.Tensor] = None) -> torch.Tensor:
-    if foreground_rgb.numel() == 0:
-        return background_rgb.new_tensor(0.0)
-    bg = background_rgb.float()
-    fg = foreground_rgb.float()
-    if foreground_alpha is not None:
-        fg = fg * foreground_alpha.float()
-    bg_vec = bg.flatten(start_dim=2)
-    fg_vec = fg.flatten(start_dim=2)
-    bg_vec = F.normalize(bg_vec, dim=-1, eps=1e-6)
-    fg_vec = F.normalize(fg_vec, dim=-1, eps=1e-6)
-    return (bg_vec.unsqueeze(2) * fg_vec.unsqueeze(1)).sum(dim=-1).abs().mean()
+def soft_orthogonality_loss(
+    pred_rgb: torch.Tensor,
+    target_rgb: torch.Tensor,
+    target_alpha: torch.Tensor,
+    validation_boxes: list[list[int] | None],
+    eps: float = 1e-6,
+) -> torch.Tensor:
+    """Pixel-space soft orthogonality loss.
+
+    The paper defines a cosine-style constraint to suppress foreground-like
+    residuals in background reconstruction. This implementation compares the
+    predicted background/foreground cosine in each foreground region against
+    the same cosine measured from the target layers.
+    """
+
+    pred_rgb = ((pred_rgb + 1.0) / 2.0).float().clamp(0.0, 1.0)
+    target_rgb = ((target_rgb + 1.0) / 2.0).float().clamp(0.0, 1.0)
+    target_alpha = target_alpha.float().clamp(0.0, 1.0)
+    losses = []
+    pred_bg = pred_rgb[1]
+    target_bg = target_rgb[0]
+    for layer_idx, box in enumerate(validation_boxes):
+        if layer_idx < 2 or box is None:
+            continue
+        target_idx = layer_idx - 1
+        if target_idx >= target_rgb.shape[0]:
+            continue
+        x1, y1, x2, y2 = [int(v) for v in box]
+        mask = target_alpha[target_idx, :, y1:y2, x1:x2]
+        if mask.sum() <= eps:
+            continue
+        pred_bg_vec = (pred_bg[:, y1:y2, x1:x2] * mask).reshape(-1)
+        pred_fg_vec = (pred_rgb[layer_idx, :, y1:y2, x1:x2] * mask).reshape(-1)
+        target_bg_vec = (target_bg[:, y1:y2, x1:x2] * mask).reshape(-1)
+        target_fg_vec = (target_rgb[target_idx, :, y1:y2, x1:x2] * mask).reshape(-1)
+        pred_cos = F.cosine_similarity(pred_bg_vec, pred_fg_vec, dim=0, eps=eps)
+        target_cos = F.cosine_similarity(target_bg_vec, target_fg_vec, dim=0, eps=eps).detach()
+        losses.append((pred_cos - target_cos).abs())
+    if not losses:
+        return pred_rgb.sum() * 0.0
+    return torch.stack(losses).mean()
 
 
-def compose_losses(
-    fm_loss: torch.Tensor,
-    alpha_loss: Optional[torch.Tensor] = None,
-    orth_loss: Optional[torch.Tensor] = None,
-    alpha_weight: float = 1.0,
-    orth_weight: float = 1.0,
-) -> Dict[str, torch.Tensor]:
-    total = fm_loss
-    out = {"loss": total, "loss_fm": fm_loss.detach()}
-    if alpha_loss is not None:
-        total = total + alpha_weight * alpha_loss
-        out["loss_alpha"] = alpha_loss.detach()
-    if orth_loss is not None:
-        total = total + orth_weight * orth_loss
-        out["loss_orth"] = orth_loss.detach()
-    out["loss"] = total
-    return out
-
+alpha_reconstruction_loss = hard_constraint_alpha_loss
+orthogonality_loss = soft_orthogonality_loss

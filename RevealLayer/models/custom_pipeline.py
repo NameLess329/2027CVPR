@@ -924,6 +924,16 @@ class CustomFluxPipelineCfg(FluxPipeline):
 
                 decoded_fg = (decoded_fg + 1.0) / 2.0
                 decoded_fg = torch.clamp(decoded_fg, min=0.0, max=1.0).permute(0, 2, 3, 1)
+                print(
+                    "decoded_fg stats:",
+                    float(decoded_fg.min()),
+                    float(decoded_fg.max()),
+                    float(decoded_fg.mean()),
+                    "decoded_alpha stats:",
+                    float(decoded_alpha.min()),
+                    float(decoded_alpha.max()),
+                    float(decoded_alpha.mean()),
+                )
 
                 vis_list = None
                 png = torch.cat([decoded_fg, decoded_alpha], dim=3)

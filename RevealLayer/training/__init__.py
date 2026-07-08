@@ -1,2 +1,2 @@
-"""Training helpers for RevealLayer LoRA fine-tuning."""
+"""RevealLayer training helpers."""
 
