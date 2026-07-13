@@ -1,0 +1,33 @@
+model_path: black-forest-labs/FLUX.1-dev
+ckpt_dir: ckpts/RevealLayer
+output_dir: outputs/rcm_stage1_eval
+
+data:
+  manifest_path: data/test_manifest.jsonl
+  data_root: data
+  resolution: 1024
+  max_layers: 12
+  layer_order: as_is
+  num_workers: 0
+
+inference:
+  seed: 42
+  mixed_precision: bf16
+  max_samples: null
+  max_sequence_length: 512
+  guidance_scale: 1.0
+  num_train_timesteps: 1000
+  min_timestep_boundary: 0.0
+  max_timestep_boundary: 1.0
+  save_visualization: true
+  save_npz: true
+
+rcm:
+  checkpoint: outputs/rcm_stage1/checkpoint-010000/rcm_head.pt
+  train_output_dir: outputs/rcm_stage1
+  rcm_dim: 512
+  clean_dim: null
+  token_factor: 16
+  tap_block: last
+  include_background: false
+  order_convention: front_to_back

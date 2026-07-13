@@ -1,0 +1,22 @@
+.git
+.agents
+.codex
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache
+.mypy_cache
+.ruff_cache
+
+# Keep heavyweight runtime artifacts out of the image build context.
+models/RevealLayer
+models/FLUX.1-dev
+models/vit32
+ckpts
+checkpoints
+RevealLayerBench
+results
+output
+logs
+.cache

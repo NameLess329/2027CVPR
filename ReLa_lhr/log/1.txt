@@ -1,0 +1,36 @@
+[2026-06-25 16:15:25]worker-0>>Requires Flash-Attention version >=2.7.1,<=2.8.0 but got 2.8.3.post1.
+[2026-06-25 16:15:25]worker-0>>RuntimeError: Failed to import diffusers.models.transformers.transformer_flux because of the following error (look up to see its traceback):
+[2026-06-25 16:15:25]worker-0>>raise RuntimeError(
+[2026-06-25 16:15:25]worker-0>>File "/usr/local/lib/python3.10/dist-packages/diffusers/utils/import_utils.py", line 885, in _get_module
+[2026-06-25 16:15:25]worker-0>>module = self._get_module(self._class_to_module[name])
+[2026-06-25 16:15:25]worker-0>>File "/usr/local/lib/python3.10/dist-packages/diffusers/utils/import_utils.py", line 873, in __getattr__
+[2026-06-25 16:15:25]worker-0>>value = getattr(module, name)
+[2026-06-25 16:15:25]worker-0>>File "/usr/local/lib/python3.10/dist-packages/diffusers/utils/import_utils.py", line 874, in __getattr__
+[2026-06-25 16:15:25]worker-0>>File "<frozen importlib._bootstrap>", line 1075, in _handle_fromlist
+[2026-06-25 16:15:25]worker-0>>from diffusers import FluxTransformer2DModel, AutoencoderKL
+[2026-06-25 16:15:25]worker-0>>File "/e-vepfs-01/ppdc/test/closeloop/intern/ych/lhr/code/RevealLayer/infer.py", line 25, in <module>
+[2026-06-25 16:15:25]worker-0>>Traceback (most recent call last):
+[2026-06-25 16:15:25]worker-0>>The above exception was the direct cause of the following exception:
+[2026-06-25 16:15:25]worker-0>>ImportError: Requires Flash-Attention version >=2.7.1,<=2.8.0 but got 2.8.3.post1.
+[2026-06-25 16:15:25]worker-0>>raise ImportError(
+[2026-06-25 16:15:25]worker-0>>File "/usr/local/lib/python3.10/dist-packages/xformers/ops/fmha/flash.py", line 81, in <module>
+[2026-06-25 16:15:25]worker-0>>Traceback (most recent call last):
+[2026-06-25 16:15:25]worker-0>>from . import (
+[2026-06-25 16:15:25]worker-0>>File "/usr/local/lib/python3.10/dist-packages/xformers/ops/fmha/__init__.py", line 10, in <module>
+[2026-06-25 16:15:25]worker-0>>from .fmha import (
+[2026-06-25 16:15:25]worker-0>>File "/usr/local/lib/python3.10/dist-packages/xformers/ops/__init__.py", line 9, in <module>
+[2026-06-25 16:15:25]worker-0>>import xformers.ops
+[2026-06-25 16:15:25]worker-0>>File "/usr/local/lib/python3.10/dist-packages/diffusers/models/attention_processor.py", line 35, in <module>
+[2026-06-25 16:15:25]worker-0>>from ..attention_processor import (
+[2026-06-25 16:15:25]worker-0>>File "/usr/local/lib/python3.10/dist-packages/diffusers/models/transformers/auraflow_transformer_2d.py", line 26, in <module>
+[2026-06-25 16:15:25]worker-0>>from .auraflow_transformer_2d import AuraFlowTransformer2DModel
+[2026-06-25 16:15:25]worker-0>>File "/usr/local/lib/python3.10/dist-packages/diffusers/models/transformers/__init__.py", line 5, in <module>
+[2026-06-25 16:15:25]worker-0>>File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+[2026-06-25 16:15:25]worker-0>>File "<frozen importlib._bootstrap_external>", line 883, in exec_module
+[2026-06-25 16:15:25]worker-0>>File "<frozen importlib._bootstrap>", line 688, in _load_unlocked
+[2026-06-25 16:15:25]worker-0>>File "<frozen importlib._bootstrap>", line 1006, in _find_and_load_unlocked
+[2026-06-25 16:15:25]worker-0>>File "<frozen importlib._bootstrap>", line 1027, in _find_and_load
+[2026-06-25 16:15:25]worker-0>>File "<frozen importlib._bootstrap>", line 1050, in _gcd_import
+[2026-06-25 16:15:25]worker-0>>File "<frozen importlib._bootstrap>", line 241, in _call_with_frames_removed
+[2026-06-25 16:15:25]worker-0>>File "<frozen importlib._bootstrap>", line 992, in _find_and_load_unlocked
+[2026-06-25 16:15:25]worker-0>>File "<frozen importlib._bootstrap>", line 1027, in _find_and_load

@@ -1,0 +1,60 @@
+model_path: black-forest-labs/FLUX.1-dev
+ckpt_dir: ckpts/RevealLayer
+output_dir: outputs/reveallayer_lora
+
+data:
+  manifest_path: data/train_manifest.jsonl
+  data_root: data
+  resolution: 1024
+  max_layers: 12
+  layer_order: as_is
+  num_workers: 4
+
+training:
+  seed: 42
+  train_batch_size: 1
+  gradient_accumulation_steps: 8
+  max_train_steps: 50000
+  mixed_precision: bf16
+  gradient_checkpointing: true
+  find_unused_parameters: true
+  checkpointing_steps: 1000
+  resume_from_checkpoint: null
+  logging_dir: logs
+  report_to: tensorboard
+  preview_steps: 1000
+  preview_dir: previews
+  max_sequence_length: 512
+  guidance_scale: 1.0
+  min_timestep_boundary: 0.0
+  max_timestep_boundary: 1.0
+
+optimizer:
+  name: prodigy
+  learning_rate: 1.0
+  weight_decay: 0.01
+  betas: [0.9, 0.99]
+  lr_scheduler: constant
+  lr_warmup_steps: 0
+
+lora:
+  rank: 64
+  alpha: 64
+  dropout: 0.0
+  target_modules: null
+  checkpoint: null
+  train_layer_pe: true
+  train_refiner: true
+
+transparent_decoder:
+  checkpoint: ckpts/xvae/transparent_decoder_ckpt.pth
+  train: false
+
+loss:
+  lambda_fm: 1.0
+  enable_alpha_loss: true
+  lambda_alpha: 1.0
+  alpha_tau: 0.95
+  alpha_gamma: 1.5
+  enable_orth_loss: true
+  lambda_orth: 1.0

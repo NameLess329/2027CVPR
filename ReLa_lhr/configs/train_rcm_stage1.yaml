@@ -1,0 +1,41 @@
+model_path: black-forest-labs/FLUX.1-dev
+ckpt_dir: ckpts/RevealLayer
+output_dir: outputs/rcm_stage1
+
+data:
+  manifest_path: data/train_manifest.jsonl
+  data_root: data
+  resolution: 1024
+  max_layers: 12
+  layer_order: as_is
+  num_workers: 4
+
+training:
+  seed: 42
+  gradient_accumulation_steps: 1
+  max_train_steps: 10000
+  mixed_precision: bf16
+  checkpointing_steps: 1000
+  resume_from_checkpoint: null
+  logging_dir: logs
+  report_to: tensorboard
+  preview_steps: 500
+  max_sequence_length: 512
+  guidance_scale: 1.0
+  num_train_timesteps: 1000
+  min_timestep_boundary: 0.0
+  max_timestep_boundary: 1.0
+
+optimizer:
+  learning_rate: 0.0001
+  weight_decay: 0.01
+  betas: [0.9, 0.999]
+
+rcm:
+  rcm_dim: 512
+  clean_dim: null
+  token_factor: 16
+  include_background: false
+  order_convention: front_to_back
+  tv_weight: 0.0
+  checkpoint: null

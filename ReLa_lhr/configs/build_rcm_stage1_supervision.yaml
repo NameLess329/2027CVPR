@@ -1,0 +1,10 @@
+input_manifest: data/train_manifest.jsonl
+data_root: data
+output_dir: supervision/rcm_stage1
+order_convention: front_to_back
+resolution: 1024
+alpha_threshold: 0.01
+bbox_padding: 8
+token_factor: 16
+save_visualization: true
+store_pixel_alpha: false
